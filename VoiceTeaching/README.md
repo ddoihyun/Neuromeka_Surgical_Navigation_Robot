@@ -149,7 +149,7 @@ VoiceModular/
 ├── tests/       # 단위 / 통합 테스트 코드
 ├── configs/     # 설정 파일 (API Key, 모델 설정 등)
 ├── assets/      # 생성되는 오디오 및 json 파일
-├── outputs/     # 로그 출력 저장
+├── logs/     # 로그 출력 저장
 └── main.py
 ```
 Last Updated: 2026-01-09
