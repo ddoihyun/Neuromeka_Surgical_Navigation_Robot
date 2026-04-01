@@ -56,7 +56,7 @@ VoiceTeaching/outputs/
 # =========================
 # 설정 파일 (민감정보)
 # =========================
-HandEye_Calibration/configs/config.py
+VoiceTeaching/configs/config.py
 *.env
 
 # =========================
