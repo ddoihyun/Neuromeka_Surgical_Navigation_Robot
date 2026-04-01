@@ -18,24 +18,13 @@ log = get_logger(__name__)
 # State machine
 # ===========================
 class State:
-    INIT          = "INIT"
+    IDLE          = "IDLE"
     TRACKING      = "TRACKING"
     CALIBRATION   = "CALIBRATION"
-    TELEOPERATION = "TELEOPERATION"
+    READY_TO_NAV  = "READY_TO_NAV"
+    ROBOT_MOVING  = "ROBOT_MOVING"
+    SAFE_STOP     = "SAFE_STOP"
     EXIT          = "EXIT"
-
-# ===========================
-# Helper
-# ===========================
-# def is_valid_pose(pos, euler_deg, pos_limit=5000.0, euler_limit=360.0):
-#     """기본 범위 체크로 비정상 포즈 필터링"""
-#     if np.any(np.abs(pos) > pos_limit):
-#         return False
-#     if np.any(np.abs(euler_deg) > euler_limit):
-#         return False
-#     if np.any(np.isnan(pos)) or np.any(np.isnan(euler_deg)):
-#         return False
-#     return True
 
 # ===========================
 # CALIBRATION MODE
@@ -49,7 +38,6 @@ def run_calibration_mode(robot_controller, hostname, tools, rom_dir, encrypted, 
 
     robot_controller.move_to_home()
 
-    # 로봇 포즈 JSON 로드 및 sample_number 기준 정렬
     with open(robot_pose_file, "r", encoding="utf-8") as f:
         pose_list = sorted(json.load(f), key=lambda x: x["sample_number"])
 
@@ -60,11 +48,9 @@ def run_calibration_mode(robot_controller, hostname, tools, rom_dir, encrypted, 
             pose_id    = pose["sample_number"]
             target_pos = pose["pose"]
 
-            # print(f"\n[CALIB] Pose {pose_id}: Collecting {samples} samples "
-            #       f"(timeout: {duration_sec}s)...")
-            log.info(f"\n[CALIB] Pose {pose_id}: Collecting {samples} samples "
-                  f"(timeout: {duration_sec}s)...")
-            
+            # print(f"\n[CALIB] Pose {pose_id}: Collecting {samples} samples (timeout: {duration_sec}s)...")
+            log.info(f"[CALIB] Pose {pose_id}: Collecting {samples} samples (timeout: {duration_sec}s)...")
+
             robot_controller.movel_to_pose(target_pos, vel_ratio=10, acc_ratio=10, timeout=60)
             time.sleep(1)
 
@@ -91,7 +77,7 @@ def run_calibration_mode(robot_controller, hostname, tools, rom_dir, encrypted, 
             collected = ndi.collect_marker_samples(api, samples, duration_sec, pose_id, on_sample)
 
             # print(f"\n[INFO] Pose {pose_id} saved. samples={len(collected)}")
-            log.info(f"\nPose {pose_id} saved. samples={len(collected)}")
+            log.info(f"Pose {pose_id} saved. samples={len(collected)}")
 
             if len(collected) == 0:
                 # print(f"[ERROR] Pose {pose_id}: NO VALID DATA!", flush=True)
@@ -99,7 +85,7 @@ def run_calibration_mode(robot_controller, hostname, tools, rom_dir, encrypted, 
 
             elif len(collected) < samples:
                 # print(f"[WARNING] Pose {pose_id}: Only {len(collected)}/{samples} samples (timeout).", flush=True)
-                log.warning(f"[WARNING] Pose {pose_id}: Only {len(collected)}/{samples} samples (timeout).")
+                log.warning(f"Pose {pose_id}: Only {len(collected)}/{samples} samples (timeout).")
 
     finally:
         api.stopTracking()
@@ -108,130 +94,128 @@ def run_calibration_mode(robot_controller, hostname, tools, rom_dir, encrypted, 
         log.info("Calibration finished.")
 
 # ===========================
-# TELEOPERATION MODE
+# NAVIGATION MODE
 # ===========================
-def run_teleoperation_mode(robot_controller, hostname, ttool, rom_dir,
-                           encrypted, cipher, calib_json_path,
-                           x_offset, y_offset, z_offset):
+def run_navigation_mode(robot_controller, hostname, ttool, rom_dir,
+                        encrypted, cipher, calib_json_path,
+                        x_offset, y_offset, z_offset):
     """
-    Teleoperation 모드:
-      1. ttool 마커 인식 → Navigator 로 로봇 EE 목표 좌표 변환
-      2. Offset 적용 좌표 출력
-      3. Enter 입력 → 로봇 이동 실행
-      4. 이동 완료 → 완료 메시지 출력 후 다시 대기
-      5. 'q' 입력 → INIT 상태로 복귀
-      6. Ctrl+C → 강제 종료 후 INIT 복귀
+    READY_TO_NAV → ROBOT_MOVING → ON_TARGET/IDLE 흐름을 내부에서 관리.
+    반환값: 'IDLE' or 'SAFE_STOP'
     """
 
-    print("\n" + "=" * 70)
-    print("[TELEOPERATION] ttool 마커 인식 → 로봇 EE 이동 모드")
-    print("  마커 인식 후 목표 좌표 출력 → Enter: 이동 / 'q': 종료")
-    print("=" * 70)
+    # print("\n" + "=" * 70)
+    # print("[NAVIGATION] ttool 마커 인식 → 로봇 EE 이동 모드")
+    # print("  마커 인식 후 목표 좌표 출력 → Enter: 이동 / 'q': 종료")
+    # print("=" * 70)
+    log.section("NAVIGATION  ttool 마커 인식 → 로봇 EE 이동 모드  |  Enter: 이동 / 'q': 종료")
 
     if not os.path.exists(calib_json_path):
-        print(f"[ERROR] Calibration result not found: {calib_json_path}")
-        return
+        # print(f"[ERROR] Calibration result not found: {calib_json_path}")
+        log.error(f"Calibration result not found: {calib_json_path}")
+        return State.IDLE
 
-    # Navigator 초기화
     try:
         nav = Navigator(calib_path=calib_json_path)
-        print(f"[INFO] Navigator loaded (method: {nav.method}, unit: {nav.unit})")
+        # print(f"[INFO] Navigator loaded (method: {nav.method}, unit: {nav.unit})")
+        log.info(f"Navigator loaded (method: {nav.method}, unit: {nav.unit})")
     except Exception as e:
-        print(f"[ERROR] Navigator init failed: {e}")
-        return
+        # print(f"[ERROR] Navigator init failed: {e}")
+        log.error(f"Navigator init failed: {e}")
+        return State.IDLE
 
-    # ── NDI 연결 + 툴 로드 + 트래킹 시작 ─────────────────────────────
     try:
-        api, ttool_handle = ndi.connect_and_setup_teleoperation(
+        api, ttool_handle = ndi.connect_and_setup_navigation(
             hostname, ttool, rom_dir, encrypted, cipher
         )
-        # api, enabled_tools = ndi._connect_and_load_tools(hostname, [ttool], rom_dir, encrypted, cipher)
-        # ttool_handle = f"{enabled_tools[0].transform.toolHandle:02X}"
     except RuntimeError as e:
-        print(f"[ERROR] {e}")
-        return
+        # print(f"[ERROR] {e}")
+        log.error(f"{e}")
+        return State.IDLE
 
     if ttool_handle is None:
-        return
+        return State.IDLE
+
+    next_state = State.IDLE
 
     try:
+        # ── READY_TO_NAV: Planning & CMD_MOVE loop ──────────────────────────
         while True:
-
-            print("-" * 70)
-            print("[WAIT] 마커 인식 중...")
+            # print("\n[READY_TO_NAV] 마커 인식 중... (Planning)")
+            # print("-" * 70)
+            log.info("READY_TO_NAV  마커 인식 중... (Planning)")
 
             raw_pose, reason = ndi.get_latest_valid_pose(
                 api, ttool_handle, timeout_sec=10.0
             )
 
             if raw_pose is None:
-                print(f"[WARNING] {reason}")
+                # print(f"[WARNING] {reason}")
+                log.warning(f"{reason}")
                 sel = input("  재시도(Enter) / 종료(q): ").strip().lower()
                 if sel == 'q':
+                    next_state = State.IDLE
                     break
                 continue
 
-            # Navigator 좌표 변환
+            # 좌표 변환
             q0, qx, qy, qz = raw_pose['q0'], raw_pose['qx'], raw_pose['qy'], raw_pose['qz']
             tx, ty, tz = raw_pose['tx'], raw_pose['ty'], raw_pose['tz']
 
             result = nav.compute(q0, qx, qy, qz, tx, ty, tz)
 
-            pos_arr = np.array([result['x'], result['y'], result['z']])
-            euler_arr = np.array([result['u'], result['v'], result['w']])
-
-            # if not is_valid_pose(pos_arr, euler_arr):
-            #     print("[WARNING] 변환된 포즈가 유효 범위를 벗어났습니다. 재인식합니다.")
-            #     continue
-
             pose = {**raw_pose, **result}
 
-            # ───────────── Offset 적용 ─────────────
             x = pose['x'] + x_offset
             y = pose['y'] + y_offset
             z = pose['z'] + z_offset
-
-            u = pose['u']
-            v = pose['v']
-            w = pose['w']
+            u, v, w = pose['u'], pose['v'], pose['w']
 
             target_pose = [x, y, z, u, v, w]
 
-            # ───────────── 출력 ─────────────
+            # print(f"\n[DETECTED] {pose['ts_str']} | NDI Error: {pose['err']:.3f} mm")
+            log.info(f"DETECTED  {pose['ts_str']} | NDI Error: {pose['err']:.3f} mm")
 
-            print(f"\n[DETECTED] {pose['ts_str']} | NDI Error: {pose['err']:.3f} mm")
+            # print("\n  [NDI Raw]")
+            # print(f"    Pos  x={pose['tx']:10.3f}  y={pose['ty']:10.3f}  z={pose['tz']:10.3f} (mm)")
+            # print(f"    Quat w={pose['q0']:.5f}  x={pose['qx']:.5f}  y={pose['qy']:.5f}  z={pose['qz']:.5f}")
+            log.info(f"NDI Raw  Pos  x={pose['tx']:10.3f}  y={pose['ty']:10.3f}  z={pose['tz']:10.3f} (mm)")
+            log.info(f"NDI Raw  Quat w={pose['q0']:.5f}  x={pose['qx']:.5f}  y={pose['qy']:.5f}  z={pose['qz']:.5f}")
 
-            print("\n  [NDI Raw]")
-            print(f"    Pos  x={pose['tx']:10.3f}  y={pose['ty']:10.3f}  z={pose['tz']:10.3f} (mm)")
-            print(f"    Quat w={pose['q0']:.5f}  x={pose['qx']:.5f}  y={pose['qy']:.5f}  z={pose['qz']:.5f}")
+            # print("\n  [Navigator Result (Offset 미적용)]")
+            # print(f"    x={pose['x']:10.4f}  y={pose['y']:10.4f}  z={pose['z']:10.4f} (mm)")
+            # print(f"    u={pose['u']:10.4f}  v={pose['v']:10.4f}  w={pose['w']:10.4f} (deg)")
+            log.info(f"Navigator Result  x={pose['x']:10.4f}  y={pose['y']:10.4f}  z={pose['z']:10.4f} (mm) | "
+                     f"u={pose['u']:10.4f}  v={pose['v']:10.4f}  w={pose['w']:10.4f} (deg)")
 
-            print("\n  [Navigator Result (Offset 미적용)]")
-            print(f"    x={pose['x']:10.4f}  y={pose['y']:10.4f}  z={pose['z']:10.4f} (mm)")
-            print(f"    u={pose['u']:10.4f}  v={pose['v']:10.4f}  w={pose['w']:10.4f} (deg)")
+            # print("\n  [Robot Target (Offset 적용, 실제 이동 좌표)]")
+            # print(f"    x={x:10.4f}  y={y:10.4f}  z={z:10.4f} (mm)")
+            # print(f"    u={u:10.4f}  v={v:10.4f}  w={w:10.4f} (deg)")
+            log.info(f"Robot Target  x={x:10.4f}  y={y:10.4f}  z={z:10.4f} (mm) | "
+                     f"u={u:10.4f}  v={v:10.4f}  w={w:10.4f} (deg)")
 
-            print("\n  [Robot Target (Offset 적용, 실제 이동 좌표)]")
-            print(f"    x={x:10.4f}  y={y:10.4f}  z={z:10.4f} (mm)")
-            print(f"    u={u:10.4f}  v={v:10.4f}  w={w:10.4f} (deg)")
+            # print(f"\n  [INDY 포맷]")
+            # print(f"    [{x:.4f}, {y:.4f}, {z:.4f}, {u:.4f}, {v:.4f}, {w:.4f}]")
+            # print()
+            log.info(f"INDY 포맷  [{x:.4f}, {y:.4f}, {z:.4f}, {u:.4f}, {v:.4f}, {w:.4f}]")
 
-            print(f"\n  [INDY 포맷]")
-            print(f"    [{x:.4f}, {y:.4f}, {z:.4f}, {u:.4f}, {v:.4f}, {w:.4f}]")
-
-            print()
-
-            # ───────────── 사용자 입력 ─────────────
             sel = input("  이동하려면 Enter / 재인식(r) / 종료(q): ").strip().lower()
 
             if sel == 'q':
-                print("[INFO] Teleoperation mode 종료.")
+                # print("[INFO] Navigation mode 종료.")
+                log.info("Navigation mode 종료.")
+                next_state = State.IDLE
                 break
 
             elif sel == 'r':
-                print("[INFO] 마커 재인식합니다.")
+                # print("[INFO] 마커 재인식합니다.")
+                log.info("마커 재인식합니다.")
                 continue
 
-            # ───────────── 로봇 이동 ─────────────
-            print("\n[MOVING] 로봇 이동 시작...")
-            print(f"  목표: {target_pose}")
+            # ── ROBOT_MOVING ────────────────────────────────────────────────
+            # print("\n[ROBOT_MOVING] 로봇 이동 시작...")
+            # print(f"  목표: {target_pose}")
+            log.info(f"ROBOT_MOVING  로봇 이동 시작...  목표: {target_pose}")
 
             try:
                 robot_controller.movel_to_pose(
@@ -240,28 +224,36 @@ def run_teleoperation_mode(robot_controller, hostname, ttool, rom_dir,
                     acc_ratio=10,
                     timeout=60
                 )
-
-                print("[DONE] 로봇 이동 완료.")
+                # TARGET_REACHED → ON_TARGET / IDLE
+                # print("[ON_TARGET] 로봇 이동 완료. IDLE 상태로 복귀합니다.")
+                log.success("ON_TARGET  로봇 이동 완료. IDLE 상태로 복귀합니다.")
+                next_state = State.IDLE
+                break
 
             except Exception as e:
-                print(f"[ERROR] 로봇 이동 실패: {e}")
-
-            print()
+                # print(f"[ERROR_DETECT] 로봇 이동 실패: {e}")
+                # print("[→ SAFE_STOP]")
+                log.error(f"ERROR_DETECT  로봇 이동 실패: {e}  →  SAFE_STOP")
+                next_state = State.SAFE_STOP
+                break
 
     except KeyboardInterrupt:
-
-        print("\n[INFO] Teleoperation mode interrupted by user.")
+        # print("\n[ERROR_DETECT] Navigation mode interrupted by user. → SAFE_STOP")
+        log.error("ERROR_DETECT  Navigation mode interrupted by user.  →  SAFE_STOP")
+        next_state = State.SAFE_STOP
 
     finally:
-
         api.stopTracking()
-        print("[INFO] Tracking stopped.")
+        # print("[INFO] Tracking stopped.")
+        log.info("Tracking stopped.")
+
+    return next_state
 
 # ===========================
 # MAIN
 # ===========================
 def main():
-    STATE  = State.INIT
+    STATE  = State.IDLE
     config = io.load_config("config.json", base_dir=Path(__file__).resolve().parent)
 
     hostname  = config["ndi"]["hostname"]
@@ -275,22 +267,25 @@ def main():
     dataset_root    = config["dataset"]["dataset_root"]
     robot_pose_file = config["dataset"]["robot_pose_file"]
 
-    ttool = config["teleoperation"]["ttool"]
-    x_offset = config["teleoperation"]["x_offset"]
-    y_offset = config["teleoperation"]["y_offset"]
-    z_offset = config["teleoperation"]["z_offset"]
+    ttool    = config["navigation"]["ttool"]
+    x_offset = config["navigation"]["x_offset"]
+    y_offset = config["navigation"]["y_offset"]
+    z_offset = config["navigation"]["z_offset"]
 
     paths = io.get_calibration_filepaths(robot_pose_file, dataset_root)
 
     while True:
-        if STATE == State.INIT:
-            print("\n" + "=" * 40)
-            print("State: INIT")
-            print("  1: Tracking Mode")
-            print("  2: Calibration Mode")
-            print("  3: Teleoperation Mode")
-            print("  Q: Exit")
-            print("=" * 40)
+
+        # ── IDLE ──────────────────────────────────────────────────────────
+        if STATE == State.IDLE:
+            # print("\n" + "=" * 40)
+            # print("State: IDLE")
+            # print("  1: Tracking Mode    (CMD_TRACKING)")
+            # print("  2: Calibration Mode (CMD_CALIBRATION)")
+            # print("  3: Navigation Mode  (CMD_NAVIGATION)")
+            # print("  Q: Exit")
+            # print("=" * 40)
+            log.section("State: IDLE  |  1: Tracking  2: Calibration  3: Navigation  Q: Exit")
             sel = input("Select: ").strip()
 
             if sel == "1":
@@ -298,59 +293,108 @@ def main():
             elif sel == "2":
                 STATE = State.CALIBRATION
             elif sel == "3":
-                STATE = State.TELEOPERATION
+                STATE = State.READY_TO_NAV
             elif sel.lower() == "q":
                 STATE = State.EXIT
             else:
-                print("[WARNING] Invalid selection.")
+                # print("[WARNING] Invalid selection.")
+                log.warning("Invalid selection.")
 
+        # ── TRACKING ──────────────────────────────────────────────────────
         elif STATE == State.TRACKING:
-            ndi.run_tracking(hostname, tools, rom_dir, encrypted, cipher, print_tracking_data=ndi.print_tracking_data)
-            STATE = State.INIT
+            # print("\n[TRACKING] 트래킹 시작... (CMD_STOP: q)")
+            log.info("TRACKING  트래킹 시작... (CMD_STOP: q)")
+            try:
+                ndi.run_tracking(
+                    hostname, tools, rom_dir, encrypted, cipher,
+                    print_tracking_data=ndi.print_tracking_data
+                )
+                # CMD_STOP → IDLE
+                # print("[TRACKING] CMD_STOP 수신 → IDLE")
+                log.info("TRACKING  CMD_STOP 수신  →  IDLE")
+                STATE = State.IDLE
 
+            except Exception as e:
+                # print(f"[ERROR_DETECT] Tracking error: {e} → SAFE_STOP")
+                log.error(f"ERROR_DETECT  Tracking error: {e}  →  SAFE_STOP")
+                STATE = State.SAFE_STOP
+
+        # ── CALIBRATION ───────────────────────────────────────────────────
         elif STATE == State.CALIBRATION:
             robot_controller = RobotController(robot_ip=robot_ip)
             try:
                 robot_controller.indy.get_control_state()
             except Exception as e:
-                print("[ERROR] Robot not connected:", e)
-                STATE = State.INIT
+                # print("[ERROR] Robot not connected:", e)
+                log.error(f"Robot not connected: {e}")
+                STATE = State.IDLE
                 continue
 
-            run_calibration_mode(
-                robot_controller,
-                hostname, tools, rom_dir, encrypted, cipher,
-                robot_pose_file, dataset_root,
-                duration_sec=config["calibration"]["duration_sec"],
-                samples=config["calibration"]["samples"]
-            )
-            calib = HandEyeCalibration(csv_path=paths["csv"])
-            calib.run()
-            STATE = State.INIT
+            try:
+                # Robot trajectory & Data collection & Calibration → IDLE
+                run_calibration_mode(
+                    robot_controller,
+                    hostname, tools, rom_dir, encrypted, cipher,
+                    robot_pose_file, dataset_root,
+                    duration_sec=config["calibration"]["duration_sec"],
+                    samples=config["calibration"]["samples"]
+                )
+                calib = HandEyeCalibration(csv_path=paths["csv"])
+                calib.run()
+                # print("[CALIBRATION] 완료 → IDLE")
+                log.success("CALIBRATION  완료  →  IDLE")
+                STATE = State.IDLE
 
-        elif STATE == State.TELEOPERATION:
+            except Exception as e:
+                # print(f"[ERROR_DETECT] Calibration error: {e} → SAFE_STOP")
+                log.error(f"ERROR_DETECT  Calibration error: {e}  →  SAFE_STOP")
+                STATE = State.SAFE_STOP
+
+        # ── READY_TO_NAV → (ROBOT_MOVING → ON_TARGET/IDLE | SAFE_STOP) ───
+        elif STATE == State.READY_TO_NAV:
             calib_json = paths["json"]
 
             robot_controller = RobotController(robot_ip=robot_ip)
             try:
                 robot_controller.indy.get_control_state()
             except Exception as e:
-                print("[ERROR] Robot not connected:", e)
-                STATE = State.INIT
+                # print("[ERROR] Robot not connected:", e)
+                log.error(f"Robot not connected: {e}")
+                STATE = State.IDLE
                 continue
 
-            run_teleoperation_mode(
+            STATE = run_navigation_mode(
                 robot_controller=robot_controller,
                 hostname=hostname,
                 ttool=ttool, rom_dir=rom_dir,
                 encrypted=encrypted, cipher=cipher,
                 calib_json_path=calib_json,
-                x_offset= x_offset, y_offset= y_offset, z_offset= z_offset
+                x_offset=x_offset, y_offset=y_offset, z_offset=z_offset
             )
-            STATE = State.INIT
 
+        # ── SAFE_STOP ─────────────────────────────────────────────────────
+        elif STATE == State.SAFE_STOP:
+            # print("\n" + "=" * 40)
+            # print("State: SAFE_STOP")
+            # print("  로봇/트래커가 안전하게 정지되었습니다.")
+            # print("  RECOVERY_RETRY: 시스템을 점검 후 계속하려면 Enter를 누르세요.")
+            # print("  종료하려면 q를 입력하세요.")
+            # print("=" * 40)
+            log.section("State: SAFE_STOP  |  로봇/트래커 안전 정지  |  Enter: RECOVERY_RETRY  q: Exit")
+            sel = input("Select (Enter=RECOVERY_RETRY / q=Exit): ").strip().lower()
+
+            if sel == 'q':
+                STATE = State.EXIT
+            else:
+                # RECOVERY_RETRY → IDLE
+                # print("[SAFE_STOP] RECOVERY_RETRY → IDLE")
+                log.info("SAFE_STOP  RECOVERY_RETRY  →  IDLE")
+                STATE = State.IDLE
+
+        # ── EXIT ──────────────────────────────────────────────────────────
         elif STATE == State.EXIT:
-            print("Exit.")
+            # print("Exit.")
+            log.info("Exit.")
             break
 
 if __name__ == "__main__":
