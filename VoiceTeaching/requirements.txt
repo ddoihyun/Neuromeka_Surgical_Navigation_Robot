@@ -1,0 +1,43 @@
+# VoiceModular - 음성 제어 시스템
+# Python 3.11 권장
+
+# Core Audio Processing
+numpy>=1.26.0,<2.2.0
+sounddevice>=0.5.0
+scipy>=1.10.0
+pygame>=2.6.0
+
+# Voice Activity Detection
+webrtcvad-wheels>=2.0.10; platform_system == "Windows"
+webrtcvad>=2.0.10; platform_system != "Windows"
+
+# HTTP Requests
+requests>=2.32.0
+
+# STT Engines
+openai>=1.0.0               # Whisper STT
+google-cloud-speech>=2.26.0  # Google Cloud STT
+
+# LLM Engines
+google-genai>=1.0.0        # Gemini 2.0
+# openai는 위에서 이미 설치됨 (GPT-4o)
+
+# TTS Engines
+gTTS>=2.5.0                 # Google TTS
+# openai는 위에서 이미 설치됨 (OpenAI TTS)
+# Clova TTS는 requests로 처리
+
+# Wake Word Detection (TensorFlow Lite)
+# TensorFlow Lite만 필요한 경우 (경량, 권장)
+tflite-runtime>=2.14.0; platform_system != "Windows"
+# 전체 TensorFlow (Windows 또는 개발 환경)
+tensorflow>=2.15.0,<2.21.0; platform_system == "Windows"
+
+# Audio Feature Extraction
+librosa>=0.10.0
+soundfile>=0.12.0         # librosa 의존성
+numba>=0.57.0             # librosa 성능 향상
+
+# Testing (Optional)
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
