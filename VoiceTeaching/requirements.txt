@@ -31,7 +31,7 @@ gTTS>=2.5.0                 # Google TTS
 # TensorFlow Lite만 필요한 경우 (경량, 권장)
 tflite-runtime>=2.14.0; platform_system != "Windows"
 # 전체 TensorFlow (Windows 또는 개발 환경)
-tensorflow>=2.15.0,<2.21.0; platform_system == "Windows"
+tensorflow>=2.15.0,<2.21.0
 
 # Audio Feature Extraction
 librosa>=0.10.0
