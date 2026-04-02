@@ -47,7 +47,7 @@ dist/
 # 데이터 & 출력
 # =========================
 # 학습 데이터
-# HandEye_Calibration/dataset/
+HandEye_Calibration/dataset/results
 # VoiceTeaching/assets/
 
 # 결과물
