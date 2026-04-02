@@ -15,7 +15,7 @@
   },
   "dataset": {
     "dataset_root": "./dataset",
-    "robot_pose_file": "./dataset/poses/robot_pose_test.json"
+    "robot_pose_file": "./dataset/poses/robot_pose_indy.json"
   },
   "calibration": {
     "duration_sec": 10,
