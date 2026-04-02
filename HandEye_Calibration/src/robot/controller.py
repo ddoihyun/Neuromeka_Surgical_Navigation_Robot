@@ -22,7 +22,7 @@ from neuromeka import IndyDCP3
 
 # ── import 경로 (단독 실행 / 패키지 실행 모두 대응) ──────────────────
 try:
-    from src.robot.motion import movej_and_wait, movel_and_wait, movel_from_json
+    from src.robot.motion import movej_and_wait, movel_and_wait, movel_relative_and_wait, movel_from_json
 except ImportError:
     # 단독 실행 시 프로젝트 루트를 sys.path에 추가
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -114,6 +114,28 @@ class RobotController:
         # print(f"\n[Moving to pose] {target_pos}")
         log.info(f"Moving to pose: {target_pos}")
         movel_and_wait(self.indy, target_pos,
+                       vel_ratio=vel_ratio, acc_ratio=acc_ratio, timeout=timeout)
+        # print("✓ Reached")
+        log.success("Reached")
+        return self.get_current_pose()
+
+    def movel_relative_to_pose(self, target_pos: List[float],
+                      vel_ratio: int = 10, acc_ratio: int = 10,
+                      timeout: float = 60.0) -> List[float]:
+        """
+        현재 로봇 위치 기준 상대위치 ttarget만큼 movel 이동.
+
+        Parameters
+        ----------
+        target_pos : List[float] – 목표 EE 태스크 좌표 [x, y, z, u, v, w]
+
+        Returns
+        -------
+        도달 후 실제 EE 태스크 좌표 [x, y, z, u, v, w]
+        """
+        # print(f"\n[Moving to pose] {target_pos}")
+        log.info(f"Moving to pose: {target_pos}")
+        movel_relative_and_wait(self.indy, target_pos,
                        vel_ratio=vel_ratio, acc_ratio=acc_ratio, timeout=timeout)
         # print("✓ Reached")
         log.success("Reached")

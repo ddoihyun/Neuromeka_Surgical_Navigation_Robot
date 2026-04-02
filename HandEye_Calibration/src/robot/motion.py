@@ -56,6 +56,14 @@ def movel_and_wait(indy: IndyDCP3, target_pos: List[float],
     wait_until_reached(indy, timeout=timeout)
 
 
+def movel_relative_and_wait(indy: IndyDCP3, target_pos: List[float],
+                   vel_ratio: int = 10, acc_ratio: int = 10, timeout: float = 60.0):
+    """movel 명령 실행 후 도달 대기."""
+    indy.movel(ttarget=target_pos, vel_ratio=vel_ratio, acc_ratio=acc_ratio,
+               base_type=TaskBaseType.RELATIVE)
+    wait_until_reached(indy, timeout=timeout)
+
+
 def movel_from_json(indy: IndyDCP3, json_path: str,
                     vel_ratio: int = 10, acc_ratio: int = 10, timeout: float = 60):
     """
