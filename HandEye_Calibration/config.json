@@ -11,7 +11,7 @@
     "cipher": ""
   },
   "robot": {
-    "ip": "192.168.0.129"
+    "ip": "192.168.0.137"
   },
   "dataset": {
     "dataset_root": "./dataset",
