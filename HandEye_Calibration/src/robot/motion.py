@@ -8,7 +8,7 @@ IndyDCP3 인스턴스(indy)를 직접 받아 동작하는 함수들만 정의한
 import time
 import json
 
-from neuromeka import IndyDCP3, TaskBaseType
+from neuromeka import IndyDCP3, TaskBaseType, BlendingType
 from typing import List
 from src.utils.logger import get_logger
 log = get_logger(__name__)
@@ -57,11 +57,25 @@ def movel_and_wait(indy: IndyDCP3, target_pos: List[float],
 
 
 def movel_relative_and_wait(indy: IndyDCP3, target_pos: List[float],
-                   vel_ratio: int = 10, acc_ratio: int = 10, timeout: float = 60.0):
-    """movel 명령 실행 후 도달 대기."""
+                            vel_ratio: int = 10, acc_ratio: int = 10, timeout: float = 60.0):
+    """movel 상대 이동 명령 실행 후 도달 대기."""
     indy.movel(ttarget=target_pos, vel_ratio=vel_ratio, acc_ratio=acc_ratio,
                base_type=TaskBaseType.RELATIVE)
     wait_until_reached(indy, timeout=timeout)
+
+
+def movel_relative(indy: IndyDCP3, target_pos: List[float],
+                   vel_ratio: int = 10, acc_ratio: int = 10):
+    """
+    movel 상대 이동 명령만 전송 (도달 대기 없음).
+
+    키보드 조그처럼 연속 입력이 필요한 상황에서 사용한다.
+    로봇이 이전 명령을 처리하는 동안 다음 명령을 덮어쓰는 방식으로
+    끊김 없는 연속 이동을 구현한다.
+    """
+    indy.movel(ttarget=target_pos, vel_ratio=vel_ratio, acc_ratio=acc_ratio,
+               blending_type=BlendingType.OVERRIDE,
+               base_type=TaskBaseType.RELATIVE)
 
 
 def movel_from_json(indy: IndyDCP3, json_path: str,
@@ -78,8 +92,6 @@ def movel_from_json(indy: IndyDCP3, json_path: str,
     for item in pose_list:
         sample_no  = item['sample_number']
         target_pos = item['pose']
-        # print(f"\n[{sample_no}] Moving to pose: {target_pos}")
         log.info(f"[{sample_no}] Moving to pose: {target_pos}")
         movel_and_wait(indy, target_pos, vel_ratio=vel_ratio, acc_ratio=acc_ratio, timeout=timeout)
-        # print(f"✓ Reached sample {sample_no}")
         log.success(f"Reached sample {sample_no}")
