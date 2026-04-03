@@ -48,7 +48,6 @@ def run_calibration_mode(robot_controller, hostname, tools, rom_dir, encrypted, 
             pose_id    = pose["sample_number"]
             target_pos = pose["pose"]
 
-            # print(f"\n[CALIB] Pose {pose_id}: Collecting {samples} samples (timeout: {duration_sec}s)...")
             log.info(f"[CALIB] Pose {pose_id}: Collecting {samples} samples (timeout: {duration_sec}s)...")
 
             robot_controller.movel_to_pose(target_pos, vel_ratio=10, acc_ratio=10, timeout=60)
@@ -76,21 +75,17 @@ def run_calibration_mode(robot_controller, hostname, tools, rom_dir, encrypted, 
 
             collected = ndi.collect_marker_samples(api, samples, duration_sec, pose_id, on_sample)
 
-            # print(f"\n[INFO] Pose {pose_id} saved. samples={len(collected)}")
             log.info(f"Pose {pose_id} saved. samples={len(collected)}")
 
             if len(collected) == 0:
-                # print(f"[ERROR] Pose {pose_id}: NO VALID DATA!", flush=True)
                 log.error(f"Pose {pose_id}: NO VALID DATA!")
 
             elif len(collected) < samples:
-                # print(f"[WARNING] Pose {pose_id}: Only {len(collected)}/{samples} samples (timeout).", flush=True)
                 log.warning(f"Pose {pose_id}: Only {len(collected)}/{samples} samples (timeout).")
 
     finally:
         api.stopTracking()
         robot_controller.move_to_home()
-        # print("Calibration finished.", flush=True)
         log.info("Calibration finished.")
 
 # ===========================
@@ -103,24 +98,16 @@ def run_navigation_mode(robot_controller, hostname, ttool, rom_dir,
     READY_TO_NAV → ROBOT_MOVING → ON_TARGET/IDLE 흐름을 내부에서 관리.
     반환값: 'IDLE' or 'SAFE_STOP'
     """
-
-    # print("\n" + "=" * 70)
-    # print("[NAVIGATION] ttool 마커 인식 → 로봇 EE 이동 모드")
-    # print("  마커 인식 후 목표 좌표 출력 → Enter: 이동 / 'q': 종료")
-    # print("=" * 70)
-    log.section("NAVIGATION  ttool 마커 인식 → 로봇 EE 이동 모드  |  Enter: 이동 / 'q': 종료")
+    log.section("NAVIGATION  ttool 마커 인식 → 로봇 EE 이동 모드  |  Enter: 이동 / j: 키보드 조그 / q: 종료")
 
     if not os.path.exists(calib_json_path):
-        # print(f"[ERROR] Calibration result not found: {calib_json_path}")
         log.error(f"Calibration result not found: {calib_json_path}")
         return State.IDLE
 
     try:
         nav = Navigator(calib_path=calib_json_path)
-        # print(f"[INFO] Navigator loaded (method: {nav.method}, unit: {nav.unit})")
         log.info(f"Navigator loaded (method: {nav.method}, unit: {nav.unit})")
     except Exception as e:
-        # print(f"[ERROR] Navigator init failed: {e}")
         log.error(f"Navigator init failed: {e}")
         return State.IDLE
 
@@ -129,7 +116,6 @@ def run_navigation_mode(robot_controller, hostname, ttool, rom_dir,
             hostname, ttool, rom_dir, encrypted, cipher
         )
     except RuntimeError as e:
-        # print(f"[ERROR] {e}")
         log.error(f"{e}")
         return State.IDLE
 
@@ -141,8 +127,6 @@ def run_navigation_mode(robot_controller, hostname, ttool, rom_dir,
     try:
         # ── READY_TO_NAV: Planning & CMD_MOVE loop ──────────────────────────
         while True:
-            # print("\n[READY_TO_NAV] 마커 인식 중... (Planning)")
-            # print("-" * 70)
             log.info("READY_TO_NAV  마커 인식 중... (Planning)")
 
             raw_pose, reason = ndi.get_latest_valid_pose(
@@ -150,12 +134,16 @@ def run_navigation_mode(robot_controller, hostname, ttool, rom_dir,
             )
 
             if raw_pose is None:
-                # print(f"[WARNING] {reason}")
                 log.warning(f"{reason}")
-                sel = input("  재시도(Enter) / 종료(q): ").strip().lower()
+                sel = input("  재시도(Enter) / 키보드조그(j) / 종료(q): ").strip().lower()
                 if sel == 'q':
                     next_state = State.IDLE
                     break
+                elif sel == 'j':
+                    # 마커 인식 실패 상태에서도 조그 허용
+                    _ret = robot_controller.keyboard_jog(vel_ratio=10, acc_ratio=10)
+                    if _ret == 'quit':
+                        log.info("키보드 조그 종료 → 마커 재인식으로 복귀")
                 continue
 
             # 좌표 변환
@@ -173,48 +161,34 @@ def run_navigation_mode(robot_controller, hostname, ttool, rom_dir,
 
             target_pose = [x, y, z, u, v, w]
 
-            # print(f"\n[DETECTED] {pose['ts_str']} | NDI Error: {pose['err']:.3f} mm")
             log.info(f"DETECTED  {pose['ts_str']} | NDI Error: {pose['err']:.3f} mm")
-
-            # print("\n  [NDI Raw]")
-            # print(f"    Pos  x={pose['tx']:10.3f}  y={pose['ty']:10.3f}  z={pose['tz']:10.3f} (mm)")
-            # print(f"    Quat w={pose['q0']:.5f}  x={pose['qx']:.5f}  y={pose['qy']:.5f}  z={pose['qz']:.5f}")
             log.info(f"NDI Raw  Pos  x={pose['tx']:10.3f}  y={pose['ty']:10.3f}  z={pose['tz']:10.3f} (mm)")
             log.info(f"NDI Raw  Quat w={pose['q0']:.5f}  x={pose['qx']:.5f}  y={pose['qy']:.5f}  z={pose['qz']:.5f}")
-
-            # print("\n  [Navigator Result (Offset 미적용)]")
-            # print(f"    x={pose['x']:10.4f}  y={pose['y']:10.4f}  z={pose['z']:10.4f} (mm)")
-            # print(f"    u={pose['u']:10.4f}  v={pose['v']:10.4f}  w={pose['w']:10.4f} (deg)")
             log.info(f"Navigator Result  x={pose['x']:10.4f}  y={pose['y']:10.4f}  z={pose['z']:10.4f} (mm) | "
                      f"u={pose['u']:10.4f}  v={pose['v']:10.4f}  w={pose['w']:10.4f} (deg)")
-
-            # print("\n  [Robot Target (Offset 적용, 실제 이동 좌표)]")
-            # print(f"    x={x:10.4f}  y={y:10.4f}  z={z:10.4f} (mm)")
-            # print(f"    u={u:10.4f}  v={v:10.4f}  w={w:10.4f} (deg)")
             log.info(f"Robot Target  x={x:10.4f}  y={y:10.4f}  z={z:10.4f} (mm) | "
                      f"u={u:10.4f}  v={v:10.4f}  w={w:10.4f} (deg)")
-
-            # print(f"\n  [INDY 포맷]")
-            # print(f"    [{x:.4f}, {y:.4f}, {z:.4f}, {u:.4f}, {v:.4f}, {w:.4f}]")
-            # print()
             log.info(f"INDY 포맷  [{x:.4f}, {y:.4f}, {z:.4f}, {u:.4f}, {v:.4f}, {w:.4f}]")
 
-            sel = input("  이동하려면 Enter / 재인식(r) / 종료(q): ").strip().lower()
+            sel = input("  이동하려면 Enter / 키보드조그(j) / 재인식(r) / 종료(q): ").strip().lower()
 
             if sel == 'q':
-                # print("[INFO] Navigation mode 종료.")
                 log.info("Navigation mode 종료.")
                 next_state = State.IDLE
                 break
 
             elif sel == 'r':
-                # print("[INFO] 마커 재인식합니다.")
                 log.info("마커 재인식합니다.")
                 continue
 
+            # ── 키보드 조그 모드 ────────────────────────────────────────────
+            elif sel == 'j':
+                log.info("키보드 조그 모드 진입. (q / ESC: 조그 종료 후 마커 재인식으로 복귀)")
+                robot_controller.keyboard_jog(vel_ratio=10, acc_ratio=10)
+                log.info("키보드 조그 종료 → 마커 재인식으로 복귀")
+                continue
+
             # ── ROBOT_MOVING ────────────────────────────────────────────────
-            # print("\n[ROBOT_MOVING] 로봇 이동 시작...")
-            # print(f"  목표: {target_pose}")
             log.info(f"ROBOT_MOVING  로봇 이동 시작...  목표: {target_pose}")
 
             try:
@@ -224,27 +198,21 @@ def run_navigation_mode(robot_controller, hostname, ttool, rom_dir,
                     acc_ratio=10,
                     timeout=60
                 )
-                # TARGET_REACHED → ON_TARGET / IDLE
-                # print("[ON_TARGET] 로봇 이동 완료. IDLE 상태로 복귀합니다.")
                 log.success("ON_TARGET  로봇 이동 완료. IDLE 상태로 복귀합니다.")
                 next_state = State.IDLE
                 break
 
             except Exception as e:
-                # print(f"[ERROR_DETECT] 로봇 이동 실패: {e}")
-                # print("[→ SAFE_STOP]")
                 log.error(f"ERROR_DETECT  로봇 이동 실패: {e}  →  SAFE_STOP")
                 next_state = State.SAFE_STOP
                 break
 
     except KeyboardInterrupt:
-        # print("\n[ERROR_DETECT] Navigation mode interrupted by user. → SAFE_STOP")
         log.error("ERROR_DETECT  Navigation mode interrupted by user.  →  SAFE_STOP")
         next_state = State.SAFE_STOP
 
     finally:
         api.stopTracking()
-        # print("[INFO] Tracking stopped.")
         log.info("Tracking stopped.")
 
     return next_state
@@ -278,13 +246,6 @@ def main():
 
         # ── IDLE ──────────────────────────────────────────────────────────
         if STATE == State.IDLE:
-            # print("\n" + "=" * 40)
-            # print("State: IDLE")
-            # print("  1: Tracking Mode    (CMD_TRACKING)")
-            # print("  2: Calibration Mode (CMD_CALIBRATION)")
-            # print("  3: Navigation Mode  (CMD_NAVIGATION)")
-            # print("  Q: Exit")
-            # print("=" * 40)
             log.section("State: IDLE  |  1: Tracking  2: Calibration  3: Navigation  Q: Exit")
             sel = input("Select: ").strip()
 
@@ -297,25 +258,20 @@ def main():
             elif sel.lower() == "q":
                 STATE = State.EXIT
             else:
-                # print("[WARNING] Invalid selection.")
                 log.warning("Invalid selection.")
 
         # ── TRACKING ──────────────────────────────────────────────────────
         elif STATE == State.TRACKING:
-            # print("\n[TRACKING] 트래킹 시작... (CMD_STOP: q)")
             log.info("TRACKING  트래킹 시작... (CMD_STOP: q)")
             try:
                 ndi.run_tracking(
                     hostname, tools, rom_dir, encrypted, cipher,
                     print_tracking_data=ndi.print_tracking_data
                 )
-                # CMD_STOP → IDLE
-                # print("[TRACKING] CMD_STOP 수신 → IDLE")
                 log.info("TRACKING  CMD_STOP 수신  →  IDLE")
                 STATE = State.IDLE
 
             except Exception as e:
-                # print(f"[ERROR_DETECT] Tracking error: {e} → SAFE_STOP")
                 log.error(f"ERROR_DETECT  Tracking error: {e}  →  SAFE_STOP")
                 STATE = State.SAFE_STOP
 
@@ -325,13 +281,11 @@ def main():
             try:
                 robot_controller.indy.get_control_state()
             except Exception as e:
-                # print("[ERROR] Robot not connected:", e)
                 log.error(f"Robot not connected: {e}")
                 STATE = State.IDLE
                 continue
 
             try:
-                # Robot trajectory & Data collection & Calibration → IDLE
                 run_calibration_mode(
                     robot_controller,
                     hostname, tools, rom_dir, encrypted, cipher,
@@ -341,12 +295,10 @@ def main():
                 )
                 calib = HandEyeCalibration(csv_path=paths["csv"])
                 calib.run()
-                # print("[CALIBRATION] 완료 → IDLE")
                 log.success("CALIBRATION  완료  →  IDLE")
                 STATE = State.IDLE
 
             except Exception as e:
-                # print(f"[ERROR_DETECT] Calibration error: {e} → SAFE_STOP")
                 log.error(f"ERROR_DETECT  Calibration error: {e}  →  SAFE_STOP")
                 STATE = State.SAFE_STOP
 
@@ -358,7 +310,6 @@ def main():
             try:
                 robot_controller.indy.get_control_state()
             except Exception as e:
-                # print("[ERROR] Robot not connected:", e)
                 log.error(f"Robot not connected: {e}")
                 STATE = State.IDLE
                 continue
@@ -374,26 +325,17 @@ def main():
 
         # ── SAFE_STOP ─────────────────────────────────────────────────────
         elif STATE == State.SAFE_STOP:
-            # print("\n" + "=" * 40)
-            # print("State: SAFE_STOP")
-            # print("  로봇/트래커가 안전하게 정지되었습니다.")
-            # print("  RECOVERY_RETRY: 시스템을 점검 후 계속하려면 Enter를 누르세요.")
-            # print("  종료하려면 q를 입력하세요.")
-            # print("=" * 40)
             log.section("State: SAFE_STOP  |  로봇/트래커 안전 정지  |  Enter: RECOVERY_RETRY  q: Exit")
             sel = input("Select (Enter=RECOVERY_RETRY / q=Exit): ").strip().lower()
 
             if sel == 'q':
                 STATE = State.EXIT
             else:
-                # RECOVERY_RETRY → IDLE
-                # print("[SAFE_STOP] RECOVERY_RETRY → IDLE")
                 log.info("SAFE_STOP  RECOVERY_RETRY  →  IDLE")
                 STATE = State.IDLE
 
         # ── EXIT ──────────────────────────────────────────────────────────
         elif STATE == State.EXIT:
-            # print("Exit.")
             log.info("Exit.")
             break
 
