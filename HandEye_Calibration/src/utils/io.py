@@ -1,13 +1,114 @@
 import csv
 import json
 import os
+import threading
 from pathlib import Path
+
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 CSV_HEADER = [
     "timestamp", "pose_id",
     "q0", "qx", "qy", "qz", "tx", "ty", "tz", "error",
     "x", "y", "z", "u", "v", "w"
 ]
+
+# ===========================
+# Action.json Watcher
+# ===========================
+
+class ActionFileHandler(FileSystemEventHandler):
+    """
+    ./shared/action.json 파일 변경을 감지하여
+    콜백 함수로 새 action 데이터를 전달합니다.
+    """
+    def __init__(self, action_file_path: str, callback):
+        super().__init__()
+        self._action_file_path = os.path.abspath(action_file_path)
+        self._callback = callback
+        self._lock = threading.Lock()
+        self._last_mtime = None
+
+    def on_modified(self, event):
+        if os.path.abspath(event.src_path) == self._action_file_path:
+            self._trigger()
+
+    def on_created(self, event):
+        if os.path.abspath(event.src_path) == self._action_file_path:
+            self._trigger()
+
+    def _trigger(self):
+        try:
+            mtime = os.path.getmtime(self._action_file_path)
+        except OSError:
+            return
+
+        with self._lock:
+            # 동일 mtime 중복 이벤트 방지
+            if mtime == self._last_mtime:
+                return
+            self._last_mtime = mtime
+
+        try:
+            with open(self._action_file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self._callback(data)
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"[ActionWatcher] Failed to read {self._action_file_path}: {e}")
+
+
+class ActionWatcher:
+    """
+    watchdog Observer를 래핑한 헬퍼 클래스.
+
+    사용법:
+        watcher = ActionWatcher("./shared/action.json", on_action_received)
+        watcher.start()
+        ...
+        watcher.stop()
+    """
+    def __init__(self, action_file_path: str, callback):
+        self._action_file_path = os.path.abspath(action_file_path)
+        self._callback = callback
+        self._observer = None
+        self._watch_dir = os.path.dirname(self._action_file_path)
+
+    def start(self):
+        os.makedirs(self._watch_dir, exist_ok=True)
+        handler = ActionFileHandler(self._action_file_path, self._callback)
+        self._observer = Observer()
+        self._observer.schedule(handler, self._watch_dir, recursive=False)
+        self._observer.start()
+        print(f"[ActionWatcher] Watching: {self._action_file_path}")
+
+    def stop(self):
+        if self._observer is not None:
+            self._observer.stop()
+            self._observer.join()
+            print("[ActionWatcher] Stopped.")
+
+
+# ===========================
+# Config offset updater
+# ===========================
+
+def apply_navigation_offset_to_config(config: dict, offset: dict) -> dict:
+    """
+    action.json의 navigation offset 값을
+    인메모리 config dict의 navigation 섹션에 반영합니다.
+
+    offset 키: x, y, z  (u, v, w 는 로봇 이동 시 직접 사용되므로 config에는 저장하지 않음)
+    """
+    nav = config.setdefault("navigation", {})
+    nav["x_offset"] = float(offset.get("x", nav.get("x_offset", 0.0)))
+    nav["y_offset"] = float(offset.get("y", nav.get("y_offset", 0.0)))
+    nav["z_offset"] = float(offset.get("z", nav.get("z_offset", 0.0)))
+    return config
+
+
+# ===========================
+# 기존 유틸리티 함수
+# ===========================
 
 def delete_calibration_csv(robot_pose_file, dataset_root):
     paths = get_calibration_filepaths(robot_pose_file, dataset_root)
@@ -58,7 +159,7 @@ def get_calibration_filepaths(robot_pose_file, dataset_root):
     base = os.path.basename(robot_pose_file)
     name = os.path.splitext(base)[0]
     suffix = name.replace("robot_pose_", "")
-    suffix = f"_{suffix}" if suffix else ""  # suffix가 비어있으면 _ 제거
+    suffix = f"_{suffix}" if suffix else ""
 
     calib_dir = os.path.join(dataset_root, "calibration")
     results_dir = os.path.join(dataset_root, "results")
