@@ -65,7 +65,7 @@ cd Neuromeka_Surgical_Navigation_Robot\VoiceTeaching
 python main.py
 ```
 
-### 텍스트 입력 모드 실행
+#### 텍스트 입력 모드 실행
 ```
 python main.py --input text
 ```
