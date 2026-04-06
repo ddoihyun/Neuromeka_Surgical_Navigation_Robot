@@ -84,13 +84,15 @@ python main.py --input text
 
 ### HandEye_Calibration
 - 마커 인식
-좌표 변환 및 로봇 제어
-action.json
+- 좌표 변환 및 로봇 제어
+
+### action.json
 두 모듈 간 데이터 전달을 위한 공유 파일
-⚠️ 주의 사항
-두 프로그램은 반드시 동시에 실행되어야 합니다.
-action.json 파일 경로가 양쪽에서 동일해야 합니다.
-Python 버전이 서로 다르므로 각 환경을 정확히 활성화해야 합니다.
+
+#### ⚠️ 주의 사항
+- 두 프로그램은 반드시 동시에 실행되어야 합니다.
+- action.json 파일 경로가 양쪽에서 동일해야 합니다.
+- Python 버전이 서로 다르므로 각 환경을 정확히 활성화해야 합니다.
 
 - Voice: Python 3.11
 - Navigation: Python 3.7
