@@ -1,4 +1,4 @@
 {
-  "action": "navigation",
-  "description": "내비게이션 및 경로 계획을 준비할게요."
+  "action": "calibration",
+  "description": "로봇 궤적 및 데이터 수집을 시작할게요."
 }
