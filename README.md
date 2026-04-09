@@ -43,11 +43,48 @@
 ---
 
 ## 🛠️ 설치 방법
+0. Python 버전 준비
+- Voice Module: Python 3.11
+- Navigation Module: Python 3.7
 
-### Navigation (Python 3.7)
+⚠️ 두 버전이 모두 설치되어 있어야 합니다.
+
+### 1️⃣ Navigation 환경 세팅 (Python 3.7)
+
+#### 가상환경 생성
+```
+cd Neuromeka_Surgical_Navigation_Robot\HandEye_Calibration
+python3.7 -m venv .venv37
+```
+
+### 가상환경 활성화
+```
+.\.venv37\Scripts\Activate
+```
+
+### Navigation 패키지 설치 (Python 3.7)
 ```
 .\.venv37\Scripts\python.exe -m pip install --upgrade pip
 .\.venv37\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+### 2️⃣ Voice 환경 세팅 (Python 3.11)
+
+#### 가상환경 생성
+```
+cd Neuromeka_Surgical_Navigation_Robot\VoiceTeaching
+python3.11 -m venv .venv311
+```
+
+### 가상환경 활성화
+```
+.\.venv311\Scripts\Activate
+```
+
+### Navigation 패키지 설치 (Python 3.7)
+```
+.\.venv311\Scripts\python.exe -m pip install --upgrade pip
+.\.venv311\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 ### ▶️ 실행 방법
@@ -65,7 +102,7 @@ cd Neuromeka_Surgical_Navigation_Robot\VoiceTeaching
 python main.py
 ```
 
-#### 텍스트 입력 모드 실행
+#### 🧪 텍스트 입력 모드 실행
 ```
 python main.py --input text
 ```
