@@ -33,7 +33,7 @@ class HandEyeCalibration:
         T_base_ee_target = inv(T_ndi_base) @ T_ndi_marker_new @ inv(T_ee_marker)
     """
 
-    def __init__(self, csv_path='../dataset/calibration/calibration_data_indy'):
+    def __init__(self, csv_path='./dataset/calibration/calibration_data_indy'):
         self.csv_path = csv_path
         self.raw_data = None
         self.averaged_data = None
@@ -783,7 +783,7 @@ class HandEyeCalibration:
 
 if __name__ == "__main__":
     import sys
-    csv_path = sys.argv[1] if len(sys.argv) > 1 else '../dataset/calibration/calibration_data_indy.csv'
+    csv_path = sys.argv[1] if len(sys.argv) > 1 else './dataset/calibration/calibration_data_indy.csv'
     print(f"Input file: {csv_path}\n")
     calibration = HandEyeCalibration(csv_path=csv_path)
     calibration.run()
