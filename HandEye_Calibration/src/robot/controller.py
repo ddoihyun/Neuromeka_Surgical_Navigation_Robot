@@ -181,10 +181,10 @@ class RobotController:
         키 맵핑
         -------
         방향키
-          ←   : +Y (왼쪽)       →   : -Y (오른쪽)
-          ↑   : -X (앞쪽)       ↓   : +X (뒤쪽)
+          ←   : -Y (좌)         →   : +Y (우)
+          ↑   : +X (상)         ↓   : -X (하)
         숫자키
-          8   : +Z (위)         2   : -Z (아래)
+          8   : +Z (전)         2   : -Z (후)
           7   : -Rx             9   : +Rx
           4   : -Ry             6   : +Ry
           1   : -Rz             3   : +Rz
@@ -206,18 +206,19 @@ class RobotController:
         lm = linear_mm   if linear_mm   is not None else self.JOG_LINEAR_MM
         ad = angular_deg if angular_deg is not None else self.JOG_ANGULAR_DEG
 
-        X, Y, Z, U, V, W = 0, 1, 2, 3, 4, 5
+        # X, Y, Z, U, V, W = 0, 1, 2, 3, 4, 5
+        Z, Y, X, U, V, W = 0, 1, 2, 3, 4, 5
 
         KEY_MAP = {
             # 방향키 (XY 평면 + Z)
-            '\x1b[D': (Y, +lm, "← +Y"),   # 왼쪽
-            '\x1b[C': (Y, -lm, "→ -Y"),   # 오른쪽
-            '\x1b[A': (Z, +lm, "↑ +Z"),   # 위
-            '\x1b[B': (Z, -lm, "↓ -Z"),   # 아래
+            '\x1b[D': (Y, -lm, "← -Y"),   # 왼쪽
+            '\x1b[C': (Y, +lm, "→ +Y"),   # 오른쪽
+            '\x1b[A': (X, +lm, "↑ +X"),   # 위
+            '\x1b[B': (X, -lm, "↓ -X"),   # 아래
 
             # 숫자키 (전후 이동)
-            '8': (X, +lm, "8  +X (forward)"),
-            '2': (X, -lm, "2  -X (backward)"),
+            '8': (Z, +lm, "8  +Z (forward)"),
+            '2': (Z, -lm, "2  -Z (backward)"),
 
             # 회전 (그대로 유지)
             '7':      (U, -ad, "7  -Rx"),
@@ -230,7 +231,7 @@ class RobotController:
 
         log.info(
             "Keyboard Jog 모드 시작\n"
-            "  방향키 : ← +Y  → -Y  ↑ -X  ↓ +X\n"
+            "  방향키 : ← -Y  → +Y  ↑ +X  ↓ -X\n"
             "  숫자키 : 8/2=±Z  7/9=±Rx  4/6=±Ry  1/3=±Rz\n"
             "  종료   : q / ESC / Ctrl+C"
         )
@@ -418,8 +419,8 @@ def _parse_args():
         description="RobotController 단독 실행",
         formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument('--ip',   type=str, default='192.168.0.137',
-                        help='로봇 IP 주소 (default: 192.168.0.137)')
+    parser.add_argument('--ip',   type=str, default='192.168.0.161',
+                        help='로봇 IP 주소 (default: 192.168.0.161)')
     parser.add_argument('--json', type=str, default=None,
                         help='실행할 robot_pose JSON 파일 경로\n'
                              '예) dataset/poses/robot_pose_broad.json')

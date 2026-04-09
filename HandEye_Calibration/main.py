@@ -33,6 +33,7 @@ class State:
 # ===========================
 _action_lock    = threading.Lock()
 _pending_action = None  # action.json으로부터 수신된 미처리 액션
+_pending_move   = None  # 'move' 액션 데이터 (메인 루프에서 ROBOT_MOVING 처리)
 
 def _get_and_clear_pending_action():
     global _pending_action
@@ -101,16 +102,23 @@ _ACTION_TO_STATE = {
     "tracking":    State.TRACKING,
     "calibration": State.CALIBRATION,
     "navigation":  State.READY_TO_NAV,
-    "move":        State.ROBOT_MOVING,
     "stop":        State.SAFE_STOP,
 }
 
-def _resolve_state_from_action(action_data: dict, config: dict) -> Optional[str]:
+def _resolve_state_from_action(action_data: dict, config: dict,
+                                robot_controller: Optional[object] = None) -> Optional[str]:
     """
     action.json 데이터를 파싱하여 전이할 State를 반환합니다.
     action == "navigation"이면 offset을 config에 반영합니다.
-    반환값이 None이면 상태 전이 없음.
+    action == "move"이면 _pending_move에 저장 후 State.ROBOT_MOVING을 반환합니다.
+      → 실제 이동은 메인 루프의 ROBOT_MOVING 분기에서 처리됩니다.
+
+    반환값
+    ------
+    str   : 전이할 State (State.TRACKING 등)
+    None  : 알 수 없는 명령 — 무시
     """
+    global _pending_move
     action = action_data.get("action")
 
     if action is None:
@@ -126,6 +134,15 @@ def _resolve_state_from_action(action_data: dict, config: dict) -> Optional[str]
             f"y={config['navigation']['y_offset']}, "
             f"z={config['navigation']['z_offset']}"
         )
+        return _ACTION_TO_STATE.get(action)
+
+    if action == "move":
+        if robot_controller is None:
+            log.warning("[ActionWatcher] 'move' 액션 수신했으나 robot_controller가 없습니다. 무시합니다.")
+            return None
+        with _action_lock:
+            _pending_move = action_data
+        return State.ROBOT_MOVING
 
     return _ACTION_TO_STATE.get(action)
 
@@ -134,12 +151,14 @@ def _resolve_state_from_action(action_data: dict, config: dict) -> Optional[str]
 # Non-blocking state prompts
 # ===========================
 
-def _idle_select(config: dict, current_state: str) -> str:
+def _idle_select(config: dict, current_state: str,
+                 robot_controller: Optional[object] = None) -> str:
     """
     IDLE 상태: 키보드 입력과 action.json pending을 동시에 감시.
     0.05 s polling으로 어느 쪽이든 먼저 오는 것에 반응합니다.
+    j: 키보드 조그 모드 (어느 상태에서든 실행 가능)
     """
-    log.section("State: IDLE  |  1: Tracking  2: Calibration  3: Navigation  Q: Exit"
+    log.section("State: IDLE  |  1: Tracking  2: Calibration  3: Navigation  j: 키보드 조그  Q: Exit"
                 "\n           (음성 명령 또는 키보드 입력 대기 중...)")
 
     nbi = NonBlockingInput("Select: ")
@@ -149,12 +168,11 @@ def _idle_select(config: dict, current_state: str) -> str:
         # ── 1. action.json 이벤트 우선 확인 ──────────────────────────────
         pending = _get_and_clear_pending_action()
         if pending is not None:
-            new_state = _resolve_state_from_action(pending, config)
+            new_state = _resolve_state_from_action(pending, config, robot_controller)
             if new_state is not None:
                 log.info(f"[ActionWatcher] IDLE → {new_state}  (음성 명령)")
-                # input() 스레드는 daemon이므로 자연 소멸
                 return new_state
-            log.warning(f"[ActionWatcher] 매핑 불가 명령, 무시: {pending.get('description', '')}")
+            log.warning(f"[ActionWatcher] 알 수 없는 명령, 무시: {pending.get('description', '')}")
 
         # ── 2. 키보드 입력 확인 ───────────────────────────────────────────
         sel = nbi.get()
@@ -166,6 +184,17 @@ def _idle_select(config: dict, current_state: str) -> str:
                 return State.CALIBRATION
             elif sel == "3":
                 return State.READY_TO_NAV
+            elif sel.lower() == "j":
+                if robot_controller is not None:
+                    log.info("키보드 조그 모드 진입. (q / ESC: 조그 종료 후 IDLE 복귀)")
+                    robot_controller.keyboard_jog(vel_ratio=10, acc_ratio=10)
+                    log.info("키보드 조그 종료 → IDLE 복귀")
+                else:
+                    log.warning("robot_controller가 없어 키보드 조그를 실행할 수 없습니다.")
+                # 조그 후 다시 IDLE 프롬프트 재시작
+                nbi = NonBlockingInput("Select: ")
+                nbi.start()
+                continue
             elif sel.lower() == "q":
                 return State.EXIT
             else:
@@ -175,30 +204,44 @@ def _idle_select(config: dict, current_state: str) -> str:
         time.sleep(0.05)
 
 
-def _safe_stop_select(config: dict) -> str:
+def _safe_stop_select(config: dict,
+                      robot_controller: Optional[object] = None) -> str:
     """
     SAFE_STOP 상태: 키보드 입력과 action.json pending을 동시에 감시.
+    j: 키보드 조그 모드 (어느 상태에서든 실행 가능)
     """
     log.section("State: SAFE_STOP  |  로봇/트래커 안전 정지"
-                "\n           Enter: RECOVERY_RETRY  q: Exit"
+                "\n           Enter: RECOVERY_RETRY  j: 키보드 조그  q: Exit"
                 "\n           (음성 명령 또는 키보드 입력 대기 중...)")
 
-    nbi = NonBlockingInput("Select (Enter=RECOVERY_RETRY / q=Exit): ")
+    nbi = NonBlockingInput("Select (Enter=RECOVERY_RETRY / j=키보드 조그 / q=Exit): ")
     nbi.start()
 
     while True:
         pending = _get_and_clear_pending_action()
         if pending is not None:
-            new_state = _resolve_state_from_action(pending, config)
+            new_state = _resolve_state_from_action(pending, config, robot_controller)
             if new_state is not None:
                 log.info(f"[ActionWatcher] SAFE_STOP → {new_state}  (음성 명령)")
                 return new_state
+            log.warning(f"[ActionWatcher] 알 수 없는 명령, 무시: {pending.get('description', '')}")
 
         sel = nbi.get()
         if sel is not None:
             sel = sel.strip().lower()
             if sel == 'q':
                 return State.EXIT
+            elif sel == 'j':
+                if robot_controller is not None:
+                    log.info("키보드 조그 모드 진입. (q / ESC: 조그 종료 후 SAFE_STOP 복귀)")
+                    robot_controller.keyboard_jog(vel_ratio=10, acc_ratio=10)
+                    log.info("키보드 조그 종료 → SAFE_STOP 복귀")
+                else:
+                    log.warning("robot_controller가 없어 키보드 조그를 실행할 수 없습니다.")
+                # 조그 후 다시 SAFE_STOP 프롬프트 재시작
+                nbi = NonBlockingInput("Select (Enter=RECOVERY_RETRY / j=키보드 조그 / q=Exit): ")
+                nbi.start()
+                continue
             else:
                 log.info("SAFE_STOP  RECOVERY_RETRY  →  IDLE")
                 return State.IDLE
@@ -273,7 +316,8 @@ def run_calibration_mode(robot_controller, hostname, tools, rom_dir, encrypted, 
 # ===========================
 def run_navigation_mode(robot_controller, hostname, ttool, rom_dir,
                         encrypted, cipher, calib_json_path,
-                        x_offset, y_offset, z_offset):
+                        x_offset, y_offset, z_offset,
+                        config: Optional[dict] = None):
     """
     READY_TO_NAV → ROBOT_MOVING → ON_TARGET/IDLE 흐름을 내부에서 관리.
     반환값: 'IDLE' or 'SAFE_STOP'
@@ -306,6 +350,16 @@ def run_navigation_mode(robot_controller, hostname, ttool, rom_dir,
 
     try:
         while True:
+            # ── action.json 이벤트 감시 (navigation 루프 내) ─────────────────
+            pending = _get_and_clear_pending_action()
+            if pending is not None and config is not None:
+                new_state = _resolve_state_from_action(pending, config, robot_controller)
+                if new_state is not None:
+                    log.info(f"[ActionWatcher] READY_TO_NAV → {new_state}  (음성 명령)")
+                    next_state = new_state
+                    break
+                log.warning(f"[ActionWatcher] 알 수 없는 명령, 무시: {pending.get('description', '')}")
+
             log.info("READY_TO_NAV  마커 인식 중... (Planning)")
 
             raw_pose, reason = ndi.get_latest_valid_pose(
@@ -389,7 +443,8 @@ def run_navigation_mode(robot_controller, hostname, ttool, rom_dir,
 # MAIN
 # ===========================
 def main():
-    STATE  = State.IDLE
+    STATE      = State.IDLE
+    prev_state = State.IDLE
     config = io.load_config("config.json", base_dir=Path(__file__).resolve().parent)
 
     hostname  = config["ndi"]["hostname"]
@@ -415,15 +470,44 @@ def main():
     watcher = io.ActionWatcher(action_file, _set_pending_action)
     watcher.start()
 
+    # ── RobotController: 메인 루프 전체에서 공유 ────────────────────────────
+    # 키보드 조그 및 move 액션을 어느 상태에서든 사용하기 위해 상위 스코프에서 관리합니다.
+    robot_controller: Optional[RobotController] = None
+
+    def _ensure_robot_controller() -> bool:
+        """robot_controller가 없거나 연결이 끊긴 경우 재연결을 시도합니다."""
+        nonlocal robot_controller
+        if robot_controller is None:
+            robot_controller = RobotController(robot_ip=robot_ip)
+        try:
+            robot_controller.indy.get_control_state()
+            return True
+        except Exception as e:
+            log.error(f"Robot not connected: {e}")
+            robot_controller = None
+            return False
+
     try:
         while True:
 
             # ── IDLE ──────────────────────────────────────────────────────────
             if STATE == State.IDLE:
-                STATE = _idle_select(config, STATE)
+                # IDLE 진입 시 robot_controller 확보 시도 (실패해도 IDLE 유지)
+                if robot_controller is None:
+                    try:
+                        robot_controller = RobotController(robot_ip=robot_ip)
+                        robot_controller.indy.get_control_state()
+                        log.info("Robot connected.")
+                    except Exception:
+                        log.warning("Robot not available. 키보드 조그 및 move 액션 비활성화.")
+                        robot_controller = None
+
+                prev_state = State.IDLE
+                STATE = _idle_select(config, STATE, robot_controller)
 
             # ── TRACKING ──────────────────────────────────────────────────────
             elif STATE == State.TRACKING:
+                prev_state = State.TRACKING
                 log.info("TRACKING  트래킹 시작... (CMD_STOP: q)")
                 try:
                     ndi.run_tracking(
@@ -439,11 +523,8 @@ def main():
 
             # ── CALIBRATION ───────────────────────────────────────────────────
             elif STATE == State.CALIBRATION:
-                robot_controller = RobotController(robot_ip=robot_ip)
-                try:
-                    robot_controller.indy.get_control_state()
-                except Exception as e:
-                    log.error(f"Robot not connected: {e}")
+                prev_state = State.CALIBRATION
+                if not _ensure_robot_controller():
                     STATE = State.IDLE
                     continue
 
@@ -466,6 +547,7 @@ def main():
 
             # ── READY_TO_NAV ──────────────────────────────────────────────────
             elif STATE == State.READY_TO_NAV:
+                prev_state = State.READY_TO_NAV
                 calib_json = paths["json"]
 
                 # action.json offset이 반영된 최신 값 사용
@@ -473,11 +555,7 @@ def main():
                 y_offset = config["navigation"]["y_offset"]
                 z_offset = config["navigation"]["z_offset"]
 
-                robot_controller = RobotController(robot_ip=robot_ip)
-                try:
-                    robot_controller.indy.get_control_state()
-                except Exception as e:
-                    log.error(f"Robot not connected: {e}")
+                if not _ensure_robot_controller():
                     STATE = State.IDLE
                     continue
 
@@ -487,12 +565,47 @@ def main():
                     ttool=ttool, rom_dir=rom_dir,
                     encrypted=encrypted, cipher=cipher,
                     calib_json_path=calib_json,
-                    x_offset=x_offset, y_offset=y_offset, z_offset=z_offset
+                    x_offset=x_offset, y_offset=y_offset, z_offset=z_offset,
+                    config=config
                 )
+
+            # ── ROBOT_MOVING ──────────────────────────────────────────────────
+            elif STATE == State.ROBOT_MOVING:
+                global _pending_move
+                with _action_lock:
+                    move_data = _pending_move
+                    _pending_move = None
+
+                if move_data is None:
+                    log.warning("ROBOT_MOVING  이동 데이터 없음  →  이전 상태 복귀")
+                    STATE = prev_state
+                    continue
+
+                offset      = move_data.get("offset", {})
+                dx          = offset.get("x", 0.0)
+                dy          = offset.get("y", 0.0)
+                dz          = offset.get("z", 0.0)
+                du          = offset.get("u", 0.0)
+                dv          = offset.get("v", 0.0)
+                dw          = offset.get("w", 0.0)
+                description = move_data.get("description", "")
+
+                log.section(f"State: ROBOT_MOVING  |  {description}"
+                            f"\n           offset=[{dx}, {dy}, {dz}, {du}, {dv}, {dw}]")
+                try:
+                    robot_controller.movel_relative_to_pose(
+                        [dx, dy, dz, du, dv, dw],
+                        vel_ratio=10, acc_ratio=10, timeout=60
+                    )
+                    log.success(f"ROBOT_MOVING  이동 완료  →  {prev_state}")
+                    STATE = prev_state
+                except Exception as e:
+                    log.error(f"ERROR_DETECT  로봇 이동 실패: {e}  →  SAFE_STOP")
+                    STATE = State.SAFE_STOP
 
             # ── SAFE_STOP ─────────────────────────────────────────────────────
             elif STATE == State.SAFE_STOP:
-                STATE = _safe_stop_select(config)
+                STATE = _safe_stop_select(config, robot_controller)
 
             # ── EXIT ──────────────────────────────────────────────────────────
             elif STATE == State.EXIT:

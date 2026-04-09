@@ -75,7 +75,7 @@ def movel_relative(indy: IndyDCP3, target_pos: List[float],
     """
     indy.movel(ttarget=target_pos, vel_ratio=vel_ratio, acc_ratio=acc_ratio,
                blending_type=BlendingType.OVERRIDE,
-               base_type=TaskBaseType.RELATIVE)
+               base_type=TaskBaseType.TCP)
 
 
 def movel_from_json(indy: IndyDCP3, json_path: str,
