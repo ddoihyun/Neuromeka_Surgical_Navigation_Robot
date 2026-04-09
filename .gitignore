@@ -48,10 +48,10 @@ dist/
 # =========================
 # 학습 데이터
 HandEye_Calibration/dataset/results
-# VoiceTeaching/assets/
+VoiceTeaching/assets/
 
 # 결과물
-VoiceTeaching/outputs/
+VoiceTeaching/logs/
 
 # =========================
 # 설정 파일 (민감정보)
