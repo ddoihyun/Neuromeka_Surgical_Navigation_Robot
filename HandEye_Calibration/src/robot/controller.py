@@ -163,7 +163,6 @@ class RobotController:
     def run_direct_teaching(self):
         self.indy.set_direct_teaching(enable=True)
         
-
     def exit_direct_teaching(self):
         self.indy.set_direct_teaching(enable=False)
 
@@ -181,6 +180,9 @@ class RobotController:
         else:
             log.info("이미 실제 모드입니다.")
 
+    def robot_recovery(self):
+        self.indy.recover()
+    
     # ── 키보드 조그 ───────────────────────────────────────────────
 
     def keyboard_jog(self,
