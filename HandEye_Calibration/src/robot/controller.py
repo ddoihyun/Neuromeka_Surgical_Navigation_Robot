@@ -160,6 +160,27 @@ class RobotController:
         movel_from_json(self.indy, json_path,
                         vel_ratio=vel_ratio, acc_ratio=acc_ratio, timeout=timeout)
 
+    def run_direct_teaching(self):
+        self.indy.set_direct_teaching(enable=True)
+        
+
+    def exit_direct_teaching(self):
+        self.indy.set_direct_teaching(enable=False)
+
+    def run_simulation_mode(self):
+        if not self.indy.get_robot_data()['sim_mode']:
+            self.indy.set_simulation_mode(enable=True)
+            log.info("시뮬레이션 모드로 변경합니다.")
+        else:
+            log.info("이미 시뮬레이션 모드입니다.")
+
+    def exit_simulation_mode(self):
+        if self.indy.get_robot_data()['sim_mode']:
+            self.indy.set_simulation_mode(enable=False)
+            log.info("실제 로봇 모드로 변경합니다.")
+        else:
+            log.info("이미 실제 모드입니다.")
+
     # ── 키보드 조그 ───────────────────────────────────────────────
 
     def keyboard_jog(self,
@@ -406,11 +427,9 @@ class RobotController:
 
         return result
 
-
 class _JogExit(Exception):
     """keyboard_jog 루프 탈출용 내부 예외."""
     pass
-
 
 # ── 단독 실행 엔트리포인트 ───────────────────────────────────────────────
 
@@ -435,7 +454,6 @@ def _parse_args():
     parser.add_argument('--acc',  type=int, default=10,
                         help='가속도 비율 (default: 10)')
     return parser.parse_args()
-
 
 if __name__ == "__main__":
     from src.utils.logger import configure_logging
