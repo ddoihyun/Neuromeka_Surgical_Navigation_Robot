@@ -66,13 +66,6 @@ def movel_relative_and_wait(indy: IndyDCP3, target_pos: List[float],
 
 def movel_relative(indy: IndyDCP3, target_pos: List[float],
                    vel_ratio: int = 10, acc_ratio: int = 10):
-    """
-    movel 상대 이동 명령만 전송 (도달 대기 없음).
-
-    키보드 조그처럼 연속 입력이 필요한 상황에서 사용한다.
-    로봇이 이전 명령을 처리하는 동안 다음 명령을 덮어쓰는 방식으로
-    끊김 없는 연속 이동을 구현한다.
-    """
     indy.movel(ttarget=target_pos, vel_ratio=vel_ratio, acc_ratio=acc_ratio,
                blending_type=BlendingType.OVERRIDE,
                base_type=TaskBaseType.TCP)
