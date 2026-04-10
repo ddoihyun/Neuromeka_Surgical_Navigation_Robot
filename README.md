@@ -22,7 +22,7 @@
 - Marker-Flange 부착
 - 사용 부품:
     - M5 Nut 1개
-    - Bolt 1개
+    - M5 Bolt 1개
     - M6 Bolt 4개
 
 ### 2. 로봇 TCP 설정
