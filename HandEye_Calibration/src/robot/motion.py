@@ -60,7 +60,8 @@ def movel_relative_and_wait(indy: IndyDCP3, target_pos: List[float],
                             vel_ratio: int = 10, acc_ratio: int = 10, timeout: float = 60.0):
     """movel 상대 이동 명령 실행 후 도달 대기."""
     indy.movel(ttarget=target_pos, vel_ratio=vel_ratio, acc_ratio=acc_ratio,
-               base_type=TaskBaseType.RELATIVE)
+               blending_type=BlendingType.OVERRIDE,
+               base_type=TaskBaseType.TCP)
     wait_until_reached(indy, timeout=timeout)
 
 
