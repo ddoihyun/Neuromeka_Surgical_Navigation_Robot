@@ -52,6 +52,7 @@ VoiceTeaching/assets/
 
 # 결과물
 VoiceTeaching/logs/
+shared/action.json
 
 # =========================
 # 설정 파일 (민감정보)
