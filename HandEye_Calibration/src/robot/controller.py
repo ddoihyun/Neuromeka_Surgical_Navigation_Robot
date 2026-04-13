@@ -440,8 +440,8 @@ def _parse_args():
         description="RobotController 단독 실행",
         formatter_class=argparse.RawTextHelpFormatter
     )
-    parser.add_argument('--ip',   type=str, default='192.168.0.161',
-                        help='로봇 IP 주소 (default: 192.168.0.161)')
+    parser.add_argument('--ip',   type=str, default='192.168.0.137',
+                        help='로봇 IP 주소 (default: 192.168.0.137)')
     parser.add_argument('--json', type=str, default=None,
                         help='실행할 robot_pose JSON 파일 경로\n'
                              '예) dataset/poses/robot_pose_broad.json')
