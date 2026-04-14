@@ -136,7 +136,7 @@ class VoiceControlSystem:
                         g.set_speak_request("네")
                         await asyncio.sleep(0.5)
                         
-                        audio_path = self.recorder.record_to_file("user_voice.wav", mode="vad")
+                        audio_path = self.recorder.record_to_file("user_voice.wav", mode="manual")
                         await self._process_voice_command(audio_path)
                         
                         detector.reset()
