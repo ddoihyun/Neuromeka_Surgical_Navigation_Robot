@@ -1308,13 +1308,23 @@ def handle_move(robot_controller, move_data: dict, prev_state: str) -> str:
 
 # ── 6-5. DIRECT_TEACHING ──────────────────────────────────────────────────────
 
-def handle_direct_teaching(robot_controller) -> str:
+def handle_direct_teaching(
+    robot_controller,
+    stop_event: threading.Event,
+    dispatcher: "ActionDispatcher",
+) -> str:
     """
-    다이렉트 티칭 모드. 사용자 Enter 입력 시 종료.
+    DIRECT_TEACHING 상태 처리.
+
+    - run_direct_teaching() 으로 DT 모드 활성화
+    - stop_event 세팅(음성 "중지") 또는 Enter 입력 시 exit_direct_teaching() 호출
+    - stop_event 로 종료 → State.STOP
+    - Enter 로 종료    → State.IDLE
 
     Returns
     -------
-    State.IDLE
+    State.IDLE  : 사용자 Enter로 정상 완료
+    State.STOP  : stop_event (외부 "중지" 명령) 로 종료
     """
     if robot_controller is None:
         log.warning("[DIRECT_TEACHING] robot_controller 없음 → IDLE")
@@ -1322,14 +1332,50 @@ def handle_direct_teaching(robot_controller) -> str:
 
     try:
         robot_controller.run_direct_teaching()
-        input("[DIRECT_TEACHING] 티칭 완료 후 Enter를 누르세요...")
-        robot_controller.exit_direct_teaching()
-        log.success("[DIRECT_TEACHING] 완료 → IDLE")
     except Exception as e:
-        log.error(f"[DIRECT_TEACHING] 오류: {e}")
-    return State.IDLE
+        log.error(f"[DIRECT_TEACHING] run_direct_teaching 실패: {e}")
+        return State.IDLE
 
+    log.info("[DIRECT_TEACHING] DT 모드 활성화. 완료 후 Enter / 중지 명령으로 종료.")
 
+    nbi = NonBlockingInput("[DIRECT_TEACHING] 티칭 완료 후 Enter를 누르세요...\n")
+    nbi.start()
+
+    next_state = State.IDLE
+
+    try:
+        while True:
+            # ── stop_event 감지: 음성 "중지" 명령 ──────────────────────
+            if stop_event.is_set():
+                log.warning("[DIRECT_TEACHING] stop_event 감지 → DT 종료 (STOP)")
+                next_state = State.STOP
+                break
+
+            # ── action.json 외부 명령 감시 ─────────────────────────────
+            with dispatcher._lock:                          # ← _lock (private)
+                has_pending = dispatcher._pending_action is not None
+            if has_pending:
+                log.info("[DIRECT_TEACHING] 외부 명령 수신 → DT 종료")
+                next_state = State.IDLE
+                break
+
+            # ── Enter 입력 감지 ─────────────────────────────────────────
+            val = nbi.get()
+            if val is not None:
+                log.info("[DIRECT_TEACHING] Enter 입력 → DT 종료 (IDLE)")
+                next_state = State.IDLE
+                break
+
+            time.sleep(0.05)
+
+    finally:
+        try:
+            robot_controller.exit_direct_teaching()
+            log.success(f"[DIRECT_TEACHING] 완료 → {next_state}")
+        except Exception as e:
+            log.warning(f"[DIRECT_TEACHING] exit_direct_teaching 실패: {e}")
+
+    return next_state
 # ── 6-6. IDLE 메뉴 ────────────────────────────────────────────────────────────
 
 def handle_idle(
@@ -1727,7 +1773,11 @@ def main() -> None:
             # ────────────────────────────────────────────────────────────────
             elif current == State.DIRECT_TEACHING:
                 stop_event.clear()
-                next_state = handle_direct_teaching(robot_controller)
+                next_state = handle_direct_teaching(
+                    robot_controller,
+                    stop_event=stop_event,
+                    dispatcher=dispatcher,
+                )
                 sm.transition(next_state)
 
             # ────────────────────────────────────────────────────────────────
