@@ -51,13 +51,10 @@ def wait_until_reached(indy: IndyDCP3, timeout: float = 30.0, poll_interval: flo
         motion = indy.get_motion_data()
         robot  = indy.get_robot_data()
 
-        # is_reached = motion.get('is_target_reached', False)
         op_state   = robot.get('op_state')
 
         # ✅ 정상 종료 조건
-        # if indy.get_motion_data().get('is_target_reached', False):
-        # if is_reached and op_state == OpState.IDLE:
-        if not motion['is_in_motion'] and robot['op_state'] == OpState.IDLE:
+        if not motion['is_in_motion'] and op_state == OpState.IDLE:
             return True
 
         # ❗ 이상 상태 감지 (추천)
