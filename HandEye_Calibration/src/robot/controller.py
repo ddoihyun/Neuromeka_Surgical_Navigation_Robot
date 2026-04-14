@@ -182,8 +182,7 @@ class RobotController:
 
     def robot_recovery(self):
         self.indy.recover()
-    
-    # ── 키보드 조그 ───────────────────────────────────────────────
+
     def keyboard_jog(self, linear_mm: float = None, angular_deg: float = None,
                     vel_ratio: int = 10, acc_ratio: int = 10) -> str:
 
@@ -193,13 +192,11 @@ class RobotController:
         X, Y, Z, U, V, W = 0, 1, 2, 3, 4, 5
 
         KEY_MAP = {
-            # 방향키 (ANSI 표준으로 통일)
             '\x1b[D': (Y, +lm, "← +Y (Left)"),
             '\x1b[C': (Y, -lm, "→ -Y (Right)"),
             '\x1b[A': (X, -lm, "↑ -X (Upward)"),
             '\x1b[B': (X, +lm, "↓ +X (Downward)"),
 
-            # NumLock ON 숫자키 (NumPad 포함)
             '8': (Z, +lm, "8  +Z (Forward)"),
             '2': (Z, -lm, "2  -Z (Backward)"),
 
@@ -244,17 +241,15 @@ class RobotController:
         _key_queue: queue.Queue = queue.Queue()
         _stop_reader = threading.Event()
 
-        # ─────────────────────────────────────────
-        # Windows 입력 (핵심 수정 부분)
-        # ─────────────────────────────────────────
+        # Windows
         if not _unix:
             import msvcrt
 
             _WIN_ARROW_MAP = {
-                'H': '\x1b[A',  # ↑
-                'P': '\x1b[B',  # ↓
-                'K': '\x1b[D',  # ←
-                'M': '\x1b[C',  # →
+                'H': '\x1b[A',
+                'P': '\x1b[B',
+                'K': '\x1b[D',
+                'M': '\x1b[C',
             }
 
             def _reader_win():
@@ -263,13 +258,8 @@ class RobotController:
                         ch = msvcrt.getwch()
 
                         if ch in ('\x00', '\xe0'):
-                            # 방향키 처리
                             code = msvcrt.getwch()
                             ch = _WIN_ARROW_MAP.get(code, '')
-                        else:
-                            # 일반 키 (NumPad 포함 → 그대로 사용)
-                            pass
-
                         if ch:
                             _key_queue.put(ch)
                     else:
@@ -281,7 +271,6 @@ class RobotController:
             def _restore(): pass
 
         else:
-            # Unix 그대로 유지
             fd = sys.stdin.fileno()
             old_settings = termios.tcgetattr(fd)
 
@@ -315,13 +304,7 @@ class RobotController:
             def _restore():
                 termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
-        # ─────────────────────────────────────────
-        # 메인 루프 (변경 없음)
-        # ─────────────────────────────────────────
-        IDLE_RESET_SEC = 0.08
-
         current_key = ''
-        last_input_t = time.monotonic()
         last_send_t = 0.0
         result = 'quit'
 
@@ -345,18 +328,14 @@ class RobotController:
                         raise _JogExit()
 
                     if key in KEY_MAP:
-                        if key != current_key:
-                            log.info(f"Jog  {KEY_MAP[key][2]}")
+                        log.info(f"Jog  {KEY_MAP[key][2]}")
                         current_key = key
-                        last_input_t = now
 
-                if current_key and (now - last_input_t) > IDLE_RESET_SEC:
-                    current_key = ''
-
-                if current_key and (now - last_send_t) >= self.JOG_SEND_INTERVAL:
+                if current_key:
                     axis, delta, _ = KEY_MAP[current_key]
                     offset = [0.0] * 6
                     offset[axis] = delta
+
                     try:
                         movel_relative(self.indy, offset,
                                     vel_ratio=vel_ratio, acc_ratio=acc_ratio)
@@ -364,7 +343,8 @@ class RobotController:
                         log.error(f"Jog 이동 실패: {e}")
                         _stop_reader.set()
                         raise _JogExit()
-                    last_send_t = now
+
+                    current_key = ''
 
                 time.sleep(0.005)
 
