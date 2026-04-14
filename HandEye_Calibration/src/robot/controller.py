@@ -22,7 +22,7 @@ from typing import List
 from src.utils.logger import get_logger
 log = get_logger(__name__)
 
-from neuromeka import IndyDCP3
+from neuromeka import IndyDCP3, OpState
 
 # ── import 경로 (단독 실행 / 패키지 실행 모두 대응) ──────────────────
 try:
@@ -35,6 +35,14 @@ except ImportError:
                                    movel_relative_and_wait, movel_relative,
                                    movel_from_json)
 
+_OPSTATE_MAP: dict = {
+    0:  "SYSTEM_OFF", 1:  "SYSTEM_ON", 2:  "VIOLATE",
+    3:  "RECOVER_HARD", 4:  "RECOVER_SOFT", 5:  "IDLE",
+    6:  "MOVING", 7:  "TEACHING", 8:  "COLLISION",
+    9:  "STOP_AND_OFF", 10: "COMPLIANCE", 11: "BRAKE_CONTROL",
+    12: "SYSTEM_RESET", 13: "SYSTEM_SWITCH", 15: "VIOLATE_HARD",
+    16: "MANUAL_RECOVER", 17: "TELE_OP",
+}
 
 class RobotController:
     """
@@ -77,6 +85,10 @@ class RobotController:
     def get_current_pose(self) -> List[float]:
         """현재 EE 태스크 좌표 반환 [x, y, z, u, v, w]."""
         return self.indy.get_control_state()['p']
+    
+    def get_opstate(self) -> str:
+        state_value = self.indy.get_robot_data()['op_state']
+        return _OPSTATE_MAP.get(state_value, str(state_value))
 
     # ── 이동 명령 ─────────────────────────────────────────────────
 
@@ -160,29 +172,31 @@ class RobotController:
         movel_from_json(self.indy, json_path,
                         vel_ratio=vel_ratio, acc_ratio=acc_ratio, timeout=timeout)
 
+    # ── 직접교시 활성화 / 비활성화 ─────────────────────────────────
     def run_direct_teaching(self):
         self.indy.set_direct_teaching(enable=True)
         
     def exit_direct_teaching(self):
         self.indy.set_direct_teaching(enable=False)
 
-    def run_simulation_mode(self):
-        if not self.indy.get_robot_data()['sim_mode']:
-            self.indy.set_simulation_mode(enable=True)
-            log.info("시뮬레이션 모드로 변경합니다.")
-        else:
-            log.info("이미 시뮬레이션 모드입니다.")
+    # def run_simulation_mode(self):
+    #     if not self.indy.get_robot_data()['sim_mode']:
+    #         self.indy.set_simulation_mode(enable=True)
+    #         log.info("시뮬레이션 모드로 변경합니다.")
+    #     else:
+    #         log.info("이미 시뮬레이션 모드입니다.")
 
-    def exit_simulation_mode(self):
-        if self.indy.get_robot_data()['sim_mode']:
-            self.indy.set_simulation_mode(enable=False)
-            log.info("실제 로봇 모드로 변경합니다.")
-        else:
-            log.info("이미 실제 모드입니다.")
+    # def exit_simulation_mode(self):
+    #     if self.indy.get_robot_data()['sim_mode']:
+    #         self.indy.set_simulation_mode(enable=False)
+    #         log.info("실제 로봇 모드로 변경합니다.")
+    #     else:
+    #         log.info("이미 실제 모드입니다.")
 
     def robot_recovery(self):
         self.indy.recover()
 
+    # ── 키보드 조그 ─────────────────────────────────────────────────
     def keyboard_jog(self, linear_mm: float = None, angular_deg: float = None,
                     vel_ratio: int = 10, acc_ratio: int = 10) -> str:
 
