@@ -27,8 +27,8 @@
   },
   "navigation": {
     "ttool": "8700340.rom",
-    "x_offset": 0.0,
-    "y_offset": -50.0,
-    "z_offset": 0.0
+    "x_offset": 45.0,
+    "y_offset": 60.0,
+    "z_offset": 170.0
   }
 }
