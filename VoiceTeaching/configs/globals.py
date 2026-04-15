@@ -22,7 +22,7 @@ is_speaking = False           # TTS 재생 중 여부
 # ==========================================
 # 로봇 상태 관련 전역 변수
 # ==========================================
-robot_mode = "stop"           # 현재 로봇 모드: "tracking", "calibration", "navigation", "move", "stop"
+robot_mode = "stop"           # 현재 로봇 모드: "tracking", "calibration", "navigation", "move", "stop", "direct_teaching"
 
 # ==========================================
 # 스레드 안전 접근 함수 (필요 시 사용)

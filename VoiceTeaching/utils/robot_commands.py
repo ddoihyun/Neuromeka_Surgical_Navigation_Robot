@@ -11,7 +11,7 @@ def execute_command(action: str) -> str:
     """
     로봇 명령 실행
     Args:
-        action: "tracking" | "calibration" | "navigation" | "move" | "stop"
+        action: "tracking" | "calibration" | "navigation" | "move" | "stop" | "direct_teaching
     Returns:
         성공 메시지 또는 None
     """
@@ -34,6 +34,10 @@ def execute_command(action: str) -> str:
     elif action == "stop":
         g.set_robot_mode("stop")
         return "정지"
+    
+    elif action == "direct_teaching":
+        g.set_robot_mode("direct_teaching")
+        return "직접교시 활성화"
 
     else:
         Logger.warning(f"알 수 없는 명령: {action}")
