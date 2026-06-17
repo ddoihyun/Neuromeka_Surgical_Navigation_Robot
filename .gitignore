@@ -57,7 +57,7 @@ VoiceTeaching/logs/
 # =========================
 # 설정 파일 (민감정보)
 # =========================
-VoiceTeaching/configs/config.py
+# VoiceTeaching/configs/config.py
 *.env
 
 # =========================
