@@ -1014,7 +1014,7 @@ def handle_calibration(
 
 # ── 6-3. READY_TO_NAV ─────────────────────────────────────────────────────────
 
-def _wait_for_input_nonblocking(
+def wait_for_input_nonblocking(
     prompt: str,
     stop_event: threading.Event,
     dispatcher: "ActionDispatcher",
@@ -1022,29 +1022,16 @@ def _wait_for_input_nonblocking(
     poll_interval: float = 0.05,
 ) -> Optional[str]:
     """
-    NonBlockingInput을 이용해 사용자 입력을 기다리되,
-    stop_event 세팅 또는 action.json 명령 수신 시 즉시 None을 반환한다.
-
-    [수정]
-    - nbi 파라미터: 외부에서 생성된 NonBlockingInput 인스턴스를 재사용 가능.
-      None이면 내부에서 새로 생성한다.
-
-    Parameters
-    ----------
-    prompt        : input() 프롬프트 문자열
-    stop_event    : 전역 중단 이벤트
-    dispatcher    : action.json 감시용 Dispatcher
-    nbi           : 재사용할 NonBlockingInput 인스턴스 (None이면 내부 생성)
-    poll_interval : polling 주기 (초)
-
-    Returns
-    -------
-    str  : 사용자가 입력한 문자열 (strip 적용)
-    None : stop_event 세팅 또는 외부 명령 수신으로 인해 중단됨
+    NonBlockingInput + stop_event + action.json 감시.
+    - nbi 가 None 이면 새로 생성해서 start.
+    - nbi 가 외부에서 넘어오면 재사용 (단, 이전 결과는 flush 후 사용).
     """
     if nbi is None:
         nbi = NonBlockingInput(prompt)
         nbi.start()
+    else:
+        # 재사용 시: 이전 루프에서 남은 결과가 있으면 버림
+        nbi.flush()
 
     while True:
         if stop_event.is_set():
@@ -1060,7 +1047,6 @@ def _wait_for_input_nonblocking(
             return val.strip()
 
         time.sleep(poll_interval)
-
 
 def handle_navigation(
     sm: StateManager,
@@ -1130,7 +1116,7 @@ def handle_navigation(
             if raw_pose is None:
                 log.warning(f"[NAV] 마커 인식 실패: {reason}")
                 print("  재시도(Enter) / 키보드조그(j) / 종료(q): ", end="", flush=True)
-                sel = _wait_for_input_nonblocking("", stop_event, dispatcher, nbi=nbi)
+                sel = wait_for_input_nonblocking("", stop_event, dispatcher, nbi=nbi)
                 if sel is None:
                     continue
                 if sel.lower() == "q":
@@ -1199,7 +1185,7 @@ def handle_navigation(
             # ── 사용자 확인 ────────────────────────────────────────────
             print("  이동(Enter) / 키보드조그(j) / 재인식(r) / 취소(q): ",
                   end="", flush=True)
-            sel = _wait_for_input_nonblocking("", stop_event, dispatcher, nbi=nbi)
+            sel = wait_for_input_nonblocking("", stop_event, dispatcher, nbi=nbi)
 
             if sel is None:
                 continue
@@ -1580,21 +1566,32 @@ def main() -> None:
 
     # ── [수정] StateManager 입력 버퍼 플러시 콜백 등록 ──────────────────────
     # state 전이마다 dispatcher pending 소비 + 입력 큐 초기화
-    def _flush_input_buffers():
+    def flush_input_buffers():
         """
-        state 전이 시마다 호출: 누적 입력 제거.
-        - dispatcher.pop_pending(): action.json 미처리 명령 소비
-        - stop 이외 pending이 있더라도 전이 후 새 state에서 재평가하므로
-          여기서는 무조건 소비한다.
+        state 전환 시 StateManager.transition()에서 호출.
+        1) dispatcher pending_action 비우기 (action.json 잔여 명령)
+        2) stdin 버퍼 비우기 (키보드 잔여 입력)
         """
+        # ── 1. action.json 펜딩 비우기 ─────────────────────────────────────
         flushed = dispatcher.pop_pending()
         if flushed is not None:
-            log.debug(
-                f"[InputFlush] state 전이로 인해 pending 명령 소비: "
-                f"action={flushed.get('action')}"
-            )
+            log.debug(f"[InputFlush] state 전환 — pending 제거: action={flushed.get('action')}")
 
-    sm.set_input_flush_fn(_flush_input_buffers)
+        # ── 2. stdin 버퍼 비우기 (플랫폼별) ────────────────────────────────
+        try:
+            if sys.platform == "win32":
+                import msvcrt
+                while msvcrt.kbhit():
+                    msvcrt.getwch()
+            else:
+                import termios
+                termios.tcflush(sys.stdin, termios.TCIFLUSH)
+        except Exception:
+            pass  # TTY가 아닌 환경(파이프, 리다이렉트)에서는 무시
+
+        log.debug("[InputFlush] stdin 버퍼 플러시 완료")
+
+    sm.set_input_flush_fn(flush_input_buffers)
 
     # ── [수정] 로봇 OpState 모니터링 스레드 시작 ─────────────────────────────
     robot_monitor = _RobotStateMonitor(
