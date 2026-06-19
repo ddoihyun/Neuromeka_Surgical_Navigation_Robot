@@ -133,3 +133,11 @@ python main.py --input text
 
 - Voice: Python 3.11
 - Navigation: Python 3.7
+
+#### Calibration 데이터셋
+```
+(2, 12, 15, 20, 21)
+pos_mean = 0.37672627248110474
+(4, 17, 19, 21, 24)
+pos_mean = 0.36830796928292403
+```
